@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: 
   pull_request:
 
 jobs:
@@ -30,17 +31,33 @@ jobs:
                        -t ghcr.io/the-may/telegram_dicebot:${{ github.sha }} .
 
       - name: Run Trivy vulnerability scanner
+        id: trivy_scan
         uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: image
           image-ref: ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
-          format: table
+          format: json
           severity: CRITICAL,HIGH
-          exit-code: 1
           ignore-unfixed: true
+          exit-code: 0   # don’t fail yet, we’ll handle it
 
-      - name: Push Docker image (if scan passed)
-        if: success()
+      - name: Parse Trivy JSON for CVE count
+        id: check_cves
+        run: |
+          cve_count=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL" or .Severity=="HIGH")] | length' trivy-results.json)
+          echo "cve_count=$cve_count" >> $GITHUB_OUTPUT
+
+      - name: Push Docker image (if no CVEs)
+        if: steps.check_cves.outputs.cve_count == '0'
         run: |
           docker push ghcr.io/the-may/telegram_dicebot:latest
           docker push ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
+
+      - name: Trigger rebuild workflow if CVEs found
+        if: steps.check_cves.outputs.cve_count != '0'
+        uses: peter-evans/workflow-dispatch@v1
+        with:
+          workflow: docker-build.yml
+          ref: main
+          inputs: |
+            reason: "High/Critical CVEs detected, rebuilding image"
