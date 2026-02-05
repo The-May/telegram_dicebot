@@ -1,0 +1,7 @@
+services:
+  dicebot:
+    image: dicebot
+    container_name: dicebot
+    restart: unless-stopped
+    env_file:
+      - .env
