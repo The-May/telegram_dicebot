@@ -1,0 +1,48 @@
+name: Scheduled CVE Scan
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning only
+        run: docker build -t ghcr.io/the-may/telegram_dicebot:scan-temp .
+
+      - name: Run Trivy vulnerability scanner
+        id: trivy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: image
+          image-ref: ghcr.io/the-may/telegram_dicebot:scan-temp
+          format: json
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0   # don’t fail workflow yet
+          output: trivy-results.json
+
+      - name: Check for CVEs
+        id: check_cves
+        run: |
+          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' trivy-results.json)
+          echo "cve_count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Trigger Docker Build Workflow if CVEs found
+        if: steps.check_cves.outputs.cve_count != '0'
+        uses: peter-evans/workflow-dispatch@v1
+        with:
+          workflow: docker-build.yml
+          ref: main
+          inputs: |
+            reason: "High/Critical CVE detected, rebuilding image"
