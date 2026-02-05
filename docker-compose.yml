@@ -5,3 +5,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    #using this label with Watchtower
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
