@@ -30,24 +30,25 @@ jobs:
         run: docker pull ghcr.io/the-may/telegram_dicebot:latest
 
       - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.33.1
         id: trivy
-        uses: aquasecurity/trivy-action@v33.1
         with:
           scan-type: image
           image-ref: ghcr.io/the-may/telegram_dicebot:latest
           format: json
+          output: trivy-results.json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: 0  # Don't fail so we can parse results
+          exit-code: 0  # Don't fail workflow, we parse JSON
 
       - name: Dispatch rebuild if CRITICAL/HIGH CVEs found
-        if: always()
         uses: actions/github-script@v8
+        if: always()
         with:
           script: |
             const fs = require('fs');
-            const trivy = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
-            const vulnerabilities = trivy.Results?.flatMap(r => r.Vulnerabilities || []);
+            const data = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
+            const vulnerabilities = data.Results?.flatMap(r => r.Vulnerabilities || []);
             const highCVEs = vulnerabilities.filter(v => ['HIGH','CRITICAL'].includes(v.Severity));
             console.log(`High/Critical CVEs found: ${highCVEs.length}`);
             if (highCVEs.length > 0) {
