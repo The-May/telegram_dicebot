@@ -1,7 +1,7 @@
 services:
   dicebot:
-    image: dicebot
-    container_name: dicebot
+    image: ghcr.io/the-may/telegram_dicebot:latest
+    container_name: telegram_dicebot
     restart: unless-stopped
     env_file:
       - .env
