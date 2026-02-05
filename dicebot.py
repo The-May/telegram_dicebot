@@ -4,13 +4,13 @@ import logging
 from telegram import InputMediaPhoto, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Define logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+httpx_logger = logging.getLogger('httpx') #change log level for httpx to WARNING to reduce log spam
+httpx_logger.setLevel(logging.WARNING)
 
-# Get token
+
+# Get token from environment variable and exit if not found
 telegram_bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not telegram_bot_token:
     logging.error("Missing environment variable: TELEGRAM_BOT_TOKEN")
@@ -19,12 +19,12 @@ if not telegram_bot_token:
 # Start the bot
 try:
     application = Application.builder().token(telegram_bot_token).build()
-    logging.info("Telegram bot started successfully.")
+    logging.info("Dicebot started successfully.")
 except Exception as e:
-    logging.error(f"Failed to create Telegram bot application: {e}")
+    logging.error(f"Failed to start: {e}")
     exit()
 
-
+#This function rolls custom dice with images from specified folder and is scalable for different dice sets.
 async def custom_dice(
     update: Update, 
     context: ContextTypes.DEFAULT_TYPE, 
@@ -62,8 +62,6 @@ async def prost(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logging.info(f"Extra Args have been issued. Ignoring extra args for /prost: {context.args}")
     await custom_dice(update, context, folder="prost", count=3, faces=6)
 
-
-# Add handler
 application.add_handler(CommandHandler("prost", prost))
 
 # Run the bot
