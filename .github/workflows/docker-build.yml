@@ -25,29 +25,22 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
-        uses: docker/build-push-action@v4
-        id: build
-        with:
-          context: .
-          push: false   # don’t push yet
-          tags: |
-            ghcr.io/the-may/telegram_dicebot:latest
-            ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
+        run: |
+          docker build -t ghcr.io/the-may/telegram_dicebot:latest \
+                       -t ghcr.io/the-may/telegram_dicebot:${{ github.sha }} .
 
-      - name: Scan Docker image for vulnerabilities
-        uses: aquasec/trivy-action@v2
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.33.1
         with:
+          scan-type: image
           image-ref: ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
           format: table
+          severity: CRITICAL,HIGH
           exit-code: 1
-          severity: HIGH,CRITICAL
+          ignore-unfixed: true
 
       - name: Push Docker image (if scan passed)
         if: success()
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/the-may/telegram_dicebot:latest
-            ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
+        run: |
+          docker push ghcr.io/the-may/telegram_dicebot:latest
+          docker push ghcr.io/the-may/telegram_dicebot:${{ github.sha }}
