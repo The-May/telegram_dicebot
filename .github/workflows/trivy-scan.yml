@@ -1,48 +1,64 @@
-name: Scheduled CVE Scan
+name: Trivy Scan Docker Image
 
 on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
   schedule:
-    # Run daily at midnight UTC
-    - cron: '0 0 * * *'
-  workflow_dispatch: # allow manual trigger
+    - cron: '0 0 * * *'  # Daily at midnight UTC
 
 jobs:
   scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # Needed to dispatch workflows
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image for scanning only
-        run: docker build -t ghcr.io/the-may/telegram_dicebot:scan-temp .
+      - name: Pull latest Docker image
+        run: docker pull ghcr.io/the-may/telegram_dicebot:latest
 
       - name: Run Trivy vulnerability scanner
         id: trivy
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v33.1
         with:
           scan-type: image
-          image-ref: ghcr.io/the-may/telegram_dicebot:scan-temp
+          image-ref: ghcr.io/the-may/telegram_dicebot:latest
           format: json
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: 0   # don’t fail workflow yet
-          output: trivy-results.json
+          exit-code: 0  # Don't fail so we can parse results
 
-      - name: Check for CVEs
-        id: check_cves
-        run: |
-          COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH" or .Severity=="CRITICAL")] | length' trivy-results.json)
-          echo "cve_count=$COUNT" >> $GITHUB_OUTPUT
-
-      - name: Trigger Docker Build Workflow if CVEs found
-        if: steps.check_cves.outputs.cve_count != '0'
-        uses: peter-evans/workflow-dispatch@v1
+      - name: Dispatch rebuild if CRITICAL/HIGH CVEs found
+        if: always()
+        uses: actions/github-script@v8
         with:
-          workflow: docker-build.yml
-          ref: main
-          inputs: |
-            reason: "High/Critical CVE detected, rebuilding image"
+          script: |
+            const fs = require('fs');
+            const trivy = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
+            const vulnerabilities = trivy.Results?.flatMap(r => r.Vulnerabilities || []);
+            const highCVEs = vulnerabilities.filter(v => ['HIGH','CRITICAL'].includes(v.Severity));
+            console.log(`High/Critical CVEs found: ${highCVEs.length}`);
+            if (highCVEs.length > 0) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'docker-build.yml',
+                ref: 'main',
+                inputs: {
+                  reason: 'CRITICAL/HIGH CVEs found in latest image'
+                }
+              });
+              console.log('Dispatched docker-build workflow due to CVEs.');
+            }
